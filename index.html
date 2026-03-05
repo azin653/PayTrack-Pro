@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PayTrack Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; overflow: hidden; }
+        .theme-green { background-color: #10893e; }
+        .screen { display: none; height: 100vh; flex-direction: column; }
+        .active-screen { display: flex; }
+        .bubble-msg { border-radius: 12px; padding: 12px; margin: 8px 0; max-width: 85%; box-shadow: 0 1px 3px rgba(0,0,0,0.08); background: white; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="homeScreen" class="screen active-screen">
+        <header class="bg-white p-5 flex items-center justify-between border-b shadow-sm">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full theme-green text-white flex items-center justify-center font-bold">P</div>
+                <h1 class="font-black text-xl text-gray-800 tracking-tight">PayTrack Pro</h1>
+            </div>
+            <div class="flex gap-5 text-gray-500">
+                <i class="fas fa-search text-xl"></i>
+                <i class="fas fa-ellipsis-v text-xl"></i>
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar" id="supplierList">
+            <div class="bg-emerald-600 p-5 rounded-2xl text-white flex items-center justify-between shadow-lg">
+                <div>
+                    <p class="text-[10px] uppercase font-black opacity-70 tracking-widest">Business Ledger</p>
+                    <h2 class="text-xl font-black">PayTrack Pro</h2>
+                </div>
+                <i class="fas fa-check-circle text-2xl opacity-40"></i>
+            </div>
+
+            <div id="emptyState" class="hidden text-center py-40 text-gray-400">
+                <p class="text-sm font-medium">No records found.<br>Add a supplier to start.</p>
+            </div>
+        </main>
+
+        <button onclick="pickContact()" class="fixed bottom-10 right-6 theme-green text-white px-8 py-4 rounded-full shadow-2xl font-bold flex items-center gap-3 active:scale-95 transition-all">
+            <i class="fas fa-plus"></i> 
+            <span class="tracking-wide">Add Supplier</span>
+        </button>
+    </div>
+
+    <div id="chatScreen" class="screen">
+        <header class="theme-green text-white p-4 flex items-center justify-between shadow-lg">
+            <div class="flex items-center gap-4">
+                <i class="fas fa-arrow-left text-xl cursor-pointer" onclick="showScreen('homeScreen')"></i>
+                <div>
+                    <h2 id="activeName" class="font-bold text-lg leading-tight"></h2>
+                    <p id="activePhone" class="text-[11px] opacity-80 font-medium"></p>
+                </div>
+            </div>
+            <div class="flex gap-6">
+                <i class="fas fa-phone-alt"></i>
+                <i class="fab fa-whatsapp text-xl" onclick="triggerWhatsAppShortcut()"></i>
+            </div>
+        </header>
+
+        <main id="chatLogs" class="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar bg-[#f1f5f9]">
+            </main>
+
+        <div class="bg-white p-4 border-t flex justify-between items-center px-8">
+            <span class="text-gray-400 font-bold text-xs uppercase tracking-widest">Balance Due</span>
+            <span id="chatTotal" class="font-black text-2xl tracking-tighter">₹0</span>
+        </div>
+
+        <div class="p-5 bg-white flex gap-4 border-t">
+            <button onclick="openEntryModal('RECEIVED')" class="flex-1 border-2 border-red-500 text-red-600 py-4 rounded-2xl font-black uppercase text-sm">Received</button>
+            <button onclick="openEntryModal('GIVEN')" class="flex-1 theme-green text-white py-4 rounded-2xl font-black shadow-lg uppercase text-sm">Given</button>
+        </div>
+    </div>
+
+    <div id="customModal" class="fixed inset-0 bg-black/60 z-[100] hidden flex items-center justify-center p-6 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
+            <h3 id="modalTitle" class="font-black text-xl mb-4">Enter Amount</h3>
+            <input type="number" id="modalInput" placeholder="0" class="w-full bg-gray-100 p-5 rounded-2xl mb-5 outline-none border-2 border-transparent focus:border-green-500 text-3xl font-black text-center">
+            <div class="flex gap-3">
+                <button onclick="closeModal()" class="flex-1 bg-gray-100 text-gray-500 py-4 rounded-2xl font-bold">Cancel</button>
+                <button onclick="submitModal()" class="flex-1 theme-green text-white py-4 rounded-2xl font-bold">Save & Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let db = JSON.parse(localStorage.getItem('paytrack_v_final_eng')) || {};
+        let currentCust = null;
+        let currentMode = '';
+
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
+            document.getElementById(id).classList.add('active-screen');
+            if(id === 'homeScreen') renderSuppliers();
+        }
+
+        async function pickContact() {
+            if ('contacts' in navigator && 'select' in navigator.contacts) {
+                try {
+                    const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+                    if (contacts.length) {
+                        const name = contacts[0].name[0];
+                        const phone = contacts[0].tel[0].replace(/\s/g, '').replace(/-/g, '');
+                        saveSupplier(name, phone);
+                    }
+                } catch (e) { manualAdd(); }
+            } else { manualAdd(); }
+        }
+
+        function manualAdd() {
+            const name = prompt("Enter Supplier Name:");
+            const phone = prompt("Enter Mobile Number:");
+            if(name && phone) saveSupplier(name, phone);
+        }
+
+        function saveSupplier(name, phone) {
+            if(!db[phone]) {
+                db[phone] = { name, logs: [] };
+                localStorage.setItem('paytrack_v_final_eng', JSON.stringify(db));
+            }
+            openChat(phone);
+        }
+
+        function openChat(phone) {
+            currentCust = phone;
+            document.getElementById('activeName').innerText = db[phone].name;
+            document.getElementById('activePhone').innerText = "+91 " + phone;
+            showScreen('chatScreen');
+            renderTransactions();
+        }
+
+        function renderTransactions() {
+            const container = document.getElementById('chatLogs');
+            container.innerHTML = '<div class="text-center my-4"><span class="bg-slate-200 text-slate-500 text-[10px] px-4 py-1 rounded-full font-black uppercase">Ledger History</span></div>';
+            let total = 0;
+            db[currentCust].logs.forEach(t => {
+                total += (t.type === 'GIVEN' ? t.amt : -t.amt);
+                const isGiven = t.type === 'GIVEN';
+                container.innerHTML += `
+                    <div class="flex ${isGiven ? 'justify-end' : 'justify-start'} w-full">
+                        <div class="bubble-msg ${isGiven ? 'border-r-4 border-green-500' : 'border-l-4 border-red-500'}">
+                            <div class="flex justify-between gap-10 mb-1">
+                                <span class="text-[8px] font-black text-gray-400 uppercase">${t.type}</span>
+                                <span class="text-[8px] text-gray-400 font-medium">${t.time}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <i class="fas ${isGiven ? 'fa-arrow-up text-green-600' : 'fa-arrow-down text-red-600'}"></i>
+                                <span class="text-2xl font-black text-gray-800 font-mono">₹${t.amt}</span>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+            const balLabel = document.getElementById('chatTotal');
+            balLabel.innerText = `₹${Math.abs(total)}`;
+            balLabel.className = `font-black text-2xl tracking-tighter ${total >= 0 ? 'text-red-600' : 'text-green-600'}`;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function openEntryModal(type) {
+            currentMode = type;
+            document.getElementById('modalTitle').innerText = (type === 'GIVEN' ? 'Given Amount' : 'Received Amount');
+            document.getElementById('customModal').classList.remove('hidden');
+            document.getElementById('modalInput').focus();
+        }
+
+        function submitModal() {
+            const amt = parseInt(document.getElementById('modalInput').value);
+            if(!amt || isNaN(amt)) return;
+            db[currentCust].logs.push({
+                type: currentMode,
+                amt: amt,
+                time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+            });
+            localStorage.setItem('paytrack_v_final_eng', JSON.stringify(db));
+            closeModal();
+            renderTransactions();
+            
+            // Fast WhatsApp Redirect
+            const currentBal = document.getElementById('chatTotal').innerText;
+            const msg = `*PayTrack Pro Update*%0A-------------------------%0ANew Entry: *₹${amt}* (${currentMode})%0ATotal Balance: *${currentBal}*%0A-------------------------%0AManaged via PayTrack Digital Ledger.`;
+            window.location.href = `whatsapp://send?phone=91${currentCust}&text=${msg}`;
+        }
+
+        function closeModal() {
+            document.getElementById('customModal').classList.add('hidden');
+            document.getElementById('modalInput').value = '';
+        }
+
+        function renderSuppliers() {
+            const list = document.getElementById('supplierList');
+            document.querySelectorAll('.supplier-card').forEach(c => c.remove());
+            const keys = Object.keys(db);
+            document.getElementById('emptyState').classList.toggle('hidden', keys.length > 0);
+            keys.forEach(phone => {
+                let total = 0;
+                db[phone].logs.forEach(l => total += (l.type === 'GIVEN' ? l.amt : -l.amt));
+                const card = document.createElement('div');
+                card.className = "supplier-card bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center active:bg-gray-50 mb-4 transition-all";
+                card.onclick = () => openChat(phone);
+                card.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 rounded-full theme-green text-white flex items-center justify-center font-black text-xl">${db[phone].name[0].toUpperCase()}</div>
+                        <div>
+                            <h3 class="font-black text-gray-800">${db[phone].name}</h3>
+                            <p class="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Digital Record</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-black text-lg ${total >= 0 ? 'text-red-600' : 'text-green-600'}">₹${Math.abs(total)}</p>
+                        <p class="text-[9px] text-gray-400 font-bold uppercase">Due</p>
+                    </div>`;
+                list.appendChild(card);
+            });
+        }
+
+        function triggerWhatsAppShortcut() {
+            window.location.href = `whatsapp://send?phone=91${currentCust}`;
+        }
+
+        window.onload = renderSuppliers;
+    </script>
+</body>
+</html>
